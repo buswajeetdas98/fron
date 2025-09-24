@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Euro,
@@ -29,6 +29,21 @@ import {
 } from "./ui/dialog";
 import { Separator } from "./ui/separator";
 import { Badge } from "./ui/badge";
+// lightweight jwt decode (no lib): parse payload
+function decodeJwtEmail(token: string | null): string | null {
+  if (!token) return null;
+  try {
+    const parts = token.split(".");
+    if (parts.length < 2) return null;
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof payload?.email === "string" ? payload.email : null;
+  } catch {
+    return null;
+  }
+}
+const API_BASE = (import.meta as any).env?.VITE_API_URL || "http://localhost:5174";
+
+// Import jsPDF lazily inside functions to keep SSR safe
 
 interface CartItem {
   id: string;
@@ -77,32 +92,46 @@ const TransactionPanel: React.FC<TransactionPanelProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [isCompleted, setIsCompleted] = useState(false);
   const [showInvoice, setShowInvoice] = useState(false);
+  const [showQR, setShowQR] = useState(false);
+  const [invoiceId, setInvoiceId] = useState<string | null>(null);
 
   const totalAmount = cartItems.reduce(
     (sum, item) => sum + item.price * item.quantity,
     0,
   );
 
+  const userEmail = useMemo(() => decodeJwtEmail(localStorage.getItem("gm_auth_token")), []);
+  const qrSrc = (import.meta as any).env?.VITE_QR_URL || "https://i.postimg.cc/4NrNNyG7/KRISHNAQR-CODE.jpg"; // direct URL
+
   const handleCompleteSale = () => {
     setIsDialogOpen(true);
   };
 
   const confirmSale = () => {
-    setIsProcessing(true);
-
-    // Simulate processing delay
-    setTimeout(() => {
-      setIsProcessing(false);
-      setIsCompleted(true);
-
-      // Reset and close dialog after showing completion
-      setTimeout(() => {
-        setIsCompleted(false);
-        setIsDialogOpen(false);
-        onCompleteSale();
-      }, 1500);
-    }, 2000);
+    // After confirm, show QR step. Payment is zero-amount but shows total visually.
+    setShowQR(true);
   };
+
+  async function simulatePaymentThenInvoice() {
+    // Simulate external app scan + "success" with zero charge
+    setIsProcessing(true);
+    await new Promise((r) => setTimeout(r, 1500));
+    setIsProcessing(false);
+    setIsCompleted(true);
+    const id = generateInvoiceId();
+    setInvoiceId(id);
+    // Auto open invoice
+    setShowInvoice(true);
+    // Generate and email in background
+    try {
+      await generatePdfAndEmail(id);
+    } catch (e) {
+      // non-blocking
+      console.error("Failed to email invoice", e);
+    }
+  }
+
+  // No auto-success; user confirms with the "I have paid" button
 
   const handleUpdateQuantity = (id: string, change: number) => {
     const item = cartItems.find((item) => item.id === id);
@@ -127,12 +156,95 @@ const TransactionPanel: React.FC<TransactionPanelProps> = ({
   };
 
   const handlePrintInvoice = () => {
-    window.print();
+    const previousTitle = document.title;
+    document.title = `Invoice - Germany Meds`;
+    setTimeout(() => {
+      window.print();
+      document.title = previousTitle;
+    }, 50);
   };
 
-  const handleDownloadPDF = () => {
-    window.print();
+  const handleDownloadPDF = async () => {
+    await generatePdfAndEmail(invoiceId || generateInvoiceId(), false);
   };
+
+  async function generatePdfAndEmail(id: string, alsoEmail: boolean = true) {
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF();
+    const line = (y: number) => doc.line(10, y, 200, y);
+
+    doc.setFontSize(18);
+    doc.text("Germany Meds", 10, 15);
+    doc.setFontSize(11);
+    doc.text("Pharmacy & Healthcare Solutions", 10, 22);
+    doc.text("Hauptstraße 123, 10115 Berlin, Germany", 10, 28);
+    line(32);
+
+    doc.setFontSize(14);
+    doc.text(`Invoice: ${id}`, 10, 40);
+    doc.text(`Date: ${new Date().toLocaleString("de-DE")}`, 10, 48);
+    if (userEmail) doc.text(`Customer: ${userEmail}`, 10, 56);
+
+    let y = 70;
+    doc.setFontSize(12);
+    doc.text("Item", 10, y);
+    doc.text("Category", 80, y);
+    doc.text("Qty", 130, y, { align: "left" });
+    doc.text("Price", 150, y, { align: "left" });
+    doc.text("Subtotal", 180, y, { align: "left" });
+    line(y + 2);
+    y += 8;
+    cartItems.forEach((it) => {
+      doc.text(it.name, 10, y);
+      doc.text(it.category, 80, y);
+      doc.text(String(it.quantity), 130, y);
+      doc.text(`€${it.price.toFixed(2)}`, 150, y);
+      doc.text(`€${(it.price * it.quantity).toFixed(2)}`, 180, y);
+      y += 7;
+    });
+    line(y);
+    y += 8;
+    doc.setFontSize(13);
+    doc.text(`Total: €${totalAmount.toFixed(2)}`, 150, y);
+
+    const pdfBlob = doc.output("blob");
+    // For download flow
+    if (!alsoEmail) {
+      const url = URL.createObjectURL(pdfBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `invoice-${id}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+
+    // Convert to base64 for API
+    const arrayBuffer = await pdfBlob.arrayBuffer();
+    const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+    const body = {
+      to: userEmail,
+      subject: `Germany Meds Invoice ${id}`,
+      text: `Invoice ${id} for €${totalAmount.toFixed(2)}`,
+      html: `<p>Thank you for your purchase.</p><p>Invoice <b>${id}</b> totaling €${totalAmount.toFixed(2)} is attached.</p>`,
+      pdfBase64: base64,
+      filename: `invoice-${id}.pdf`,
+      fields: {
+        id,
+        total: totalAmount,
+        items: cartItems,
+      },
+    };
+    try {
+      await fetch(`${API_BASE}/api/email/invoice`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      console.error("Email send failed", e);
+    }
+  }
 
   const InvoicePreview = () => (
     <div className="bg-white p-8 max-w-4xl mx-auto">
@@ -248,7 +360,7 @@ const TransactionPanel: React.FC<TransactionPanelProps> = ({
   );
 
   return (
-    <Card className="w-full max-w-md bg-white shadow-lg">
+    <Card className="w-full bg-white shadow-lg max-h-[calc(100vh-96px)] flex flex-col">
       <CardHeader className="bg-blue-50">
         <CardTitle className="flex items-center text-blue-800">
           <ShoppingCart className="mr-2" size={20} />
@@ -256,14 +368,14 @@ const TransactionPanel: React.FC<TransactionPanelProps> = ({
         </CardTitle>
       </CardHeader>
 
-      <CardContent className="p-0">
+      <CardContent className="p-0 flex-1 overflow-hidden">
         {cartItems.length === 0 ? (
           <div className="p-6 text-center text-gray-500">
             <ShoppingCart className="mx-auto mb-2 text-gray-400" size={40} />
             <p>Your cart is empty</p>
           </div>
         ) : (
-          <div className="max-h-[450px] overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+          <div className="h-full overflow-y-auto p-4 pb-28 cart-scroll">
             {cartItems.map((item) => (
               <motion.div
                 key={item.id}
@@ -328,7 +440,7 @@ const TransactionPanel: React.FC<TransactionPanelProps> = ({
 
       <Separator />
 
-      <CardFooter className="flex flex-col p-4">
+      <CardFooter className="flex flex-col p-4 sticky bottom-0 bg-white">
         <div className="mb-4 flex w-full items-center justify-between">
           <span className="text-sm font-medium text-gray-500">
             Items ({cartItems.reduce((sum, item) => sum + item.quantity, 0)})
@@ -358,15 +470,25 @@ const TransactionPanel: React.FC<TransactionPanelProps> = ({
             <DialogTitle>
               {showInvoice
                 ? "Invoice Preview"
-                : isCompleted
-                  ? "Sale Complete"
-                  : "Confirm Sale"}
+                : showQR
+                  ? "Scan to Pay"
+                  : isCompleted
+                    ? "Sale Complete"
+                    : "Confirm Sale"}
             </DialogTitle>
             <DialogDescription>
               {showInvoice ? (
                 <div className="text-sm text-gray-600 mb-4">
                   Review your invoice below. You can print or download it as a
                   PDF.
+                </div>
+              ) : showQR ? (
+                <div className="flex flex-col items-center gap-3 py-2">
+                  <p className="text-center">Scan the QR with your payment app to complete the purchase.</p>
+                  <div className="rounded-lg border p-2 bg-white">
+                    <img src={"https://i.postimg.cc/4NrNNyG7/KRISHNAQR-CODE.jpg"} alt="Payment QR" className="w-56 h-56 object-contain" />
+                  </div>
+                  <p className="text-sm text-gray-500">Amount shown: €{totalAmount.toFixed(2)}</p>
                 </div>
               ) : isCompleted ? (
                 <div className="flex flex-col items-center py-4 text-center">
@@ -429,7 +551,27 @@ const TransactionPanel: React.FC<TransactionPanelProps> = ({
                   <Download className="mr-2 h-4 w-4" />
                   Download PDF
                 </Button>
+                <Button
+                  variant="default"
+                  onClick={() => {
+                    onCompleteSale();
+                    setShowInvoice(false);
+                    setIsCompleted(false);
+                    setIsDialogOpen(false);
+                    setShowQR(false);
+                  }}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  Close & Clear
+                </Button>
               </div>
+            </DialogFooter>
+          ) : showQR ? (
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowQR(false)} disabled={isProcessing}>Back</Button>
+              <Button onClick={simulatePaymentThenInvoice} disabled={isProcessing}>
+                {isProcessing ? "Processing..." : "I have paid"}
+              </Button>
             </DialogFooter>
           ) : isCompleted ? (
             <DialogFooter>

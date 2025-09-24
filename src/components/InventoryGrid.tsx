@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
+// Removed internal ScrollArea to avoid nested scrollbars and clipping
 import {
   Select,
   SelectContent,
@@ -67,7 +67,7 @@ const InventoryGrid = ({
   ];
 
   return (
-    <div className="bg-white rounded-lg shadow-sm w-full h-full flex flex-col">
+    <div className="bg-white rounded-lg shadow-sm w-full flex flex-col">
       <div className="flex flex-col md:flex-row justify-between items-center p-6 pb-4 gap-4 flex-shrink-0">
         <h2 className="text-2xl font-bold text-gray-800">Inventory</h2>
 
@@ -105,20 +105,19 @@ const InventoryGrid = ({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0">
-        <ScrollArea className="h-full px-6">
+      <div className="px-6 pb-6">
           {currentItems.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-gray-500">
               <p>No medicines found matching your criteria.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-5">
               {currentItems.map((item) => (
                 <Card
                   key={item.id}
-                  className="overflow-hidden hover:shadow-md transition-shadow"
+                  className="overflow-hidden hover:shadow-md transition-shadow h-full"
                 >
-                  <div className="h-32 bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center">
+                  <div className="bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center aspect-[4/3]">
                     {item.image ? (
                       <img
                         src={item.image}
@@ -129,7 +128,7 @@ const InventoryGrid = ({
                       <div className="text-blue-500 text-3xl">💊</div>
                     )}
                   </div>
-                  <CardContent className="p-4">
+                  <CardContent className="p-4 flex flex-col gap-3">
                     <div className="mb-3">
                       <h3 className="font-semibold text-gray-900 text-sm mb-2 line-clamp-2">
                         {item.name}
@@ -149,7 +148,7 @@ const InventoryGrid = ({
                           : "Out of stock"}
                       </Badge>
                     </div>
-                    <div className="flex justify-between items-center">
+                    <div className="flex justify-between items-center mt-auto">
                       <p className="text-lg font-bold text-blue-700">
                         €{item.price.toFixed(2)}
                       </p>
@@ -168,11 +167,10 @@ const InventoryGrid = ({
               ))}
             </div>
           )}
-        </ScrollArea>
       </div>
 
       {filteredItems.length > itemsPerPage && (
-        <div className="p-6 pt-4 flex-shrink-0">
+        <div className="px-6 pb-6 pt-2">
           <Pagination>
             <PaginationContent>
               <PaginationItem>

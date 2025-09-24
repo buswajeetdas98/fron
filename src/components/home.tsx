@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Euro,
@@ -6,10 +6,16 @@ import {
   Menu,
   User,
   ShoppingCart,
-  Settings,
+  Settings as SettingsIcon,
   Package,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -17,6 +23,8 @@ import { useNavigate } from "react-router-dom";
 import InventoryGrid from "./InventoryGrid";
 import TransactionPanel from "./TransactionPanel";
 import SystemArchitecture from "./SystemArchitecture";
+import UserProfile from "./UserProfile";
+import Settings from "./Settings";
 
 interface Medicine {
   id: number;
@@ -37,6 +45,31 @@ const Home = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showArchitecture, setShowArchitecture] = useState(false);
+  const [spinForever, setSpinForever] = useState(false);
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  // Route protection now handled by RequireAuth wrapper
+
+  // Detect first-ever visit to enable continuous logo rotation
+  useEffect(() => {
+    try {
+      const hasVisitedKey = "gm_has_visited";
+      const hasVisited = typeof window !== "undefined" && window.localStorage
+        ? window.localStorage.getItem(hasVisitedKey)
+        : null;
+      if (!hasVisited) {
+        setSpinForever(true);
+        if (typeof window !== "undefined" && window.localStorage) {
+          window.localStorage.setItem(hasVisitedKey, "1");
+        }
+      }
+    } catch {
+      // If localStorage is unavailable, fail gracefully without breaking UI
+      setSpinForever(false);
+    }
+  }, []);
 
   // Sample inventory data
   const inventory: Medicine[] = [
@@ -165,7 +198,7 @@ const Home = () => {
             <motion.div
               initial={{ rotate: 0 }}
               animate={{ rotate: 360 }}
-              transition={{ duration: 2, repeat: 0 }}
+              transition={{ duration: 2, repeat: spinForever ? Infinity : 0, ease: "linear" }}
               className="bg-primary rounded-full p-2"
             >
               <Euro className="h-6 w-6 text-white" />
@@ -174,13 +207,19 @@ const Home = () => {
           </div>
 
           <div className="flex items-center space-x-4">
-            <Button variant="ghost" size="icon">
+            <Button variant="ghost" size="icon" onClick={() => setIsProfileOpen(true)}>
               <User className="h-5 w-5" />
             </Button>
-            <Button variant="ghost" size="icon">
-              <Settings className="h-5 w-5" />
+            <Button variant="ghost" size="icon" onClick={() => setIsSettingsOpen(true)}>
+              <SettingsIcon className="h-5 w-5" />
             </Button>
-            <Button variant="ghost" size="icon" className="relative">
+            <Button variant="outline" size="sm" onClick={() => { localStorage.removeItem("gm_auth_token"); navigate("/login"); }}>Logout</Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="relative"
+              onClick={() => setIsCartOpen(true)}
+            >
               <ShoppingCart className="h-5 w-5" />
               {cart.length > 0 && (
                 <span className="absolute -top-1 -right-1 bg-primary text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
@@ -195,8 +234,34 @@ const Home = () => {
         </div>
       </header>
 
+      {/* Cart Drawer */}
+      <Sheet open={isCartOpen} onOpenChange={setIsCartOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-lg p-0 flex flex-col overflow-hidden">
+          <SheetHeader className="px-6 py-4 border-b">
+            <SheetTitle>Transaction Cart</SheetTitle>
+          </SheetHeader>
+          <TransactionPanel
+            cartItems={cart.map((item) => ({
+              id: item.id.toString(),
+              name: item.name,
+              price: item.price,
+              quantity: item.quantity,
+              category: item.category,
+            }))}
+            onUpdateQuantity={(id, quantity) =>
+              updateQuantity(parseInt(id), quantity)
+            }
+            onRemoveItem={(id) => removeFromCart(parseInt(id))}
+            onCompleteSale={() => {
+              completeSale();
+              setIsCartOpen(false);
+            }}
+          />
+        </SheetContent>
+      </Sheet>
+
       {/* Main Content */}
-      <div className="flex-1 container mx-auto px-4 py-6 flex flex-col md:flex-row gap-6 overflow-hidden">
+      <div className="flex-1 container mx-auto px-4 py-6 flex flex-col md:flex-row gap-6">
         {/* Sidebar */}
         <div className="w-full md:w-64 space-y-4">
           <Tabs
@@ -256,7 +321,7 @@ const Home = () => {
         {/* Main Content Area */}
         <div className="flex-1 flex flex-col md:flex-row gap-6 overflow-hidden">
           {/* Inventory Section */}
-          <div className="flex-1 overflow-hidden flex flex-col">
+          <div className="flex-1 flex flex-col">
             <div className="mb-4 flex items-center justify-between flex-shrink-0">
               <h2 className="text-2xl font-bold">
                 {activeTab === "dashboard"
@@ -278,10 +343,10 @@ const Home = () => {
               )}
             </div>
 
-            <Separator className="mb-4 flex-shrink-0" />
+            <Separator className="mb-4" />
 
             {(activeTab === "dashboard" || activeTab === "inventory") && (
-              <div className="flex-1 min-h-0">
+              <div className="flex-1">
                 <InventoryGrid
                   items={filteredInventory.map((item) => ({
                     id: item.id.toString(),
@@ -312,27 +377,15 @@ const Home = () => {
             )}
           </div>
 
-          {/* Transaction Panel (only show on dashboard) */}
-          {(activeTab === "dashboard" || activeTab === "inventory") && (
-            <div className="w-full md:w-96 bg-card rounded-lg border border-border overflow-hidden">
-              <TransactionPanel
-                cartItems={cart.map((item) => ({
-                  id: item.id.toString(),
-                  name: item.name,
-                  price: item.price,
-                  quantity: item.quantity,
-                  category: item.category,
-                }))}
-                onUpdateQuantity={(id, quantity) =>
-                  updateQuantity(parseInt(id), quantity)
-                }
-                onRemoveItem={(id) => removeFromCart(parseInt(id))}
-                onCompleteSale={completeSale}
-              />
-            </div>
-          )}
+          {/* Transaction Panel moved to drawer; no fixed sidebar */}
         </div>
       </div>
+
+      {/* User Profile Component */}
+      <UserProfile open={isProfileOpen} onOpenChange={setIsProfileOpen} />
+
+      {/* Settings Component */}
+      <Settings open={isSettingsOpen} onOpenChange={setIsSettingsOpen} />
     </div>
   );
 };
