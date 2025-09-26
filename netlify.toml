@@ -4,7 +4,7 @@
 [build]
   base = "client"       # change working directory to client/
   publish = "dist"      # directory to publish after build
-  command = "npm ci && npm run build"
+  command = "npm install && npm run build"
 
 [build.environment]
   NODE_VERSION = "20"
