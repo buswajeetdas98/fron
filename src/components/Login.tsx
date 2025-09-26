@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { z } from "zod";
+import { api } from "@/lib/api";
 import { useNavigate } from "react-router-dom";
 
 const emailSchema = z.string().trim().email();
@@ -11,7 +12,7 @@ type Stage = "details" | "otp";
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
-  const API_BASE = (import.meta as any).env?.VITE_API_URL || "http://localhost:5174";
+  // API base is configured via Axios instance and Vite proxy
   const [stage, setStage] = useState<Stage>("details");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -39,16 +40,8 @@ const Login: React.FC = () => {
     setLoading(true);
     
     try {
-      // Use the API endpoint through the Vite proxy
-      const response = await fetch(`/api/auth/request-otp`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ name, email }),
-      });
-      
-      const data = await response.json();
+      // Use Axios client through the Vite proxy
+      const { data } = await api.post(`/api/auth/request-otp`, { name, email });
       
       if (data.ok) {
         setStage("otp");
@@ -76,15 +69,7 @@ const Login: React.FC = () => {
     setLoading(true);
     
     try {
-      const response = await fetch(`${API_BASE}/api/auth/verify-otp`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, otp }),
-      });
-      
-      const data = await response.json();
+      const { data } = await api.post(`/api/auth/verify-otp`, { email, otp });
       
       if (data.ok && data.token) {
         localStorage.setItem("gm_auth_token", data.token);
@@ -95,10 +80,7 @@ const Login: React.FC = () => {
         setError(data.error || "Invalid OTP");
         setAttempts(prev => prev + 1);
         
-        // If too many attempts, suggest requesting new OTP
-        if (response.status === 429) {
-          setError("Too many attempts. Please request a new OTP.");
-        }
+        // If too many attempts, suggest requesting new OTP (not expected; backend returns ok=true for demo)
       }
     } catch (err) {
       console.error("Error verifying OTP:", err);

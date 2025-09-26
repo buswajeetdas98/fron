@@ -22,10 +22,10 @@ export default defineConfig({
   server: {
     // @ts-ignore
     allowedHosts: true,
-    port: 5175, // Use a different port than the server
+    port: 5175, // Frontend dev server
     proxy: {
       '/api': {
-        target: 'http://localhost:5174',
+        target: 'http://localhost:8000',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path

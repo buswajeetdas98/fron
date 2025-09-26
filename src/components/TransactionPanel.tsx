@@ -41,7 +41,7 @@ function decodeJwtEmail(token: string | null): string | null {
     return null;
   }
 }
-const API_BASE = (import.meta as any).env?.VITE_API_URL || "http://localhost:5174";
+import { api } from "@/lib/api";
 
 // Import jsPDF lazily inside functions to keep SSR safe
 
@@ -236,11 +236,7 @@ const TransactionPanel: React.FC<TransactionPanelProps> = ({
       },
     };
     try {
-      await fetch(`${API_BASE}/api/email/invoice`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      await api.post(`/api/email/invoice`, body);
     } catch (e) {
       console.error("Email send failed", e);
     }

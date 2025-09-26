@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
+import { api } from "@/lib/api";
 
 export const isAuthenticated = (): boolean => {
   try {
@@ -13,15 +14,8 @@ export const validateToken = async (): Promise<boolean> => {
   try {
     const token = localStorage.getItem("gm_auth_token");
     if (!token) return false;
-    
-    const API_BASE = (import.meta as any).env?.VITE_API_URL || "http://localhost:5174";
-    const response = await fetch(`${API_BASE}/api/auth/me`, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    });
-    
-    return response.ok;
+    await api.get(`/api/auth/me`);
+    return true;
   } catch {
     return false;
   }
