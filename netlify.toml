@@ -2,7 +2,6 @@
 # The Django backend should be hosted elsewhere (Railway/Render/Fly/your server).
 
 [build]
-  base = "client"       # change working directory to client/
   publish = "dist"      # directory to publish after build
   command = "npm install && npm run build"
 
