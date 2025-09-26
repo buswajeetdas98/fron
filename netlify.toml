@@ -1,14 +1,7 @@
-# Netlify configuration for deploying the frontend (client/) only
-# The Django backend should be hosted elsewhere (Railway/Render/Fly/your server).
-
 [build]
-  publish = "dist"      # directory to publish after build
+  publish = "dist"
   command = "npm install && npm run build"
 
-[build.environment]
-  NODE_VERSION = "20"
-
-# SPA fallback for React Router
 [[redirects]]
   from = "/*"
   to = "/index.html"
